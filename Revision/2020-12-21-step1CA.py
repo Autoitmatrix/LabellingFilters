@@ -8,11 +8,11 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
-#import tensorflow as tf
+# import tensorflow as tf
 from datetime import datetime, timedelta
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow import keras
-#from tensorflow.keras import preprocessing
+# from tensorflow.keras import preprocessing
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tqdm import tqdm
 from warnings import warn
@@ -21,8 +21,8 @@ from warnings import warn
 
 # Input
 network = "VGG16"
-images_dir = r"C:\Users\Daniel\PycharmProjects\LabellingFilters\Data" # "/home/ws/ns1888/FilterLabel/ILSVRC2012_img_train"
-save_dir = r"C:\Users\Daniel\PycharmProjects\LabellingFilters\Pickles" # "/home/ws/ns1888/FilterLabel/codes/resultstest4"
+images_dir = "C:/Users/Daniel/PycharmProjects/LabellingFilters/Data"  # "/home/ws/ns1888/FilterLabel/ILSVRC2012_img_train"
+save_dir = "C:/Users/Daniel/PycharmProjects/LabellingFilters/Pickles"  # "/home/ws/ns1888/FilterLabel/codes/resultstest4"
 seed_rn = 123
 method = "average"  # either "average" or "max" for merging image activations
 aggregation = "filterfirst"  # "imagesfirst"
@@ -99,6 +99,8 @@ network_mod = {"VGG16": "vgg16", "VGG19": "vgg19", "InceptionV3": "inception_v3"
                "ResNet152V2": "resnet_v2", "InceptionResNetV2": "inception_resnet_v2"}
 logger.info("importing network")
 cnn = getattr(keras.applications, network)()  # import network
+network_module = getattr(keras.applications, network_mod[network])  # corresponding network module
+preprocess_input = getattr(network_module, "preprocess_input")  # preprocessing function
 layers = []  # interesting layers, omitting pooling layer and fc
 for i, layer in enumerate(cnn.layers):
     if 'conv' not in layer.name:
@@ -108,18 +110,20 @@ logger.debug("conv layers are at positions " + str(layers))
 
 """## functions"""
 
-def preprocess_images_from_dir(images_dir, img_rows, img_cols, network, seed_rn, split, numclasses=None):
-    '''
+
+def preprocess_images_from_dir(i_dir, preprocess_fun, i_rows=224, i_cols=224, seed_rn="123", val_split=0.2, res=None):
+    """
     prepares the images in images_dir as input for the networks.
 
     input:
-    - images_dir: path to the directory with image data, the folders in it should be named after the image class of the images they contain.
-    - img_rows: height of images
-    - img_cols: width of images
-    - network: name of the cnn
+    - i_dir: path to the directory with image data, the folders in it should be named after the image class of the
+                  images they contain.
+    - preprocess_fun: preprocessing function
+    - i_rows: height of images
+    - i_cols: width of images
     - seed_rn: random seed
-    - split: fraction used for test set, 1-split is used for train set
-    - numclasses: restriction of the number of classes
+    - val_split: fraction used for test set, 1-split is used for train set
+    - res: restriction of the number of classes
 
     returns:
     - images_train: train set
@@ -127,38 +131,36 @@ def preprocess_images_from_dir(images_dir, img_rows, img_cols, network, seed_rn,
 
     remark:
     uses tensorflow.keras as keras and ImageDataGenerator from tensorflow.keras.preprocessing.image
-    '''
-    logger.info("loading images in " + images_dir)
-    network_module = getattr(keras.applications, network_mod[network])
-    preprocess_input = getattr(network_module, "preprocess_input")
-    datagen = ImageDataGenerator(preprocessing_function=preprocess_input, validation_split=split)
-    folders = os.listdir(images_dir)
+    """
+    logger.debug("loading images in " + i_dir)
+    datagen = ImageDataGenerator(preprocessing_function=preprocess_fun, validation_split=val_split)
+    folders = os.listdir(i_dir)
     numfolders = len(folders)
-    if numclasses:
-        numfolders = numclasses
+    if res:
+        numfolders = res
     files = []
     target = []
     for folder in folders[0:numfolders]:
-        imagepaths = os.listdir(images_dir + "/" + folder)
+        imagepaths = os.listdir(i_dir + "/" + folder)
         for imagepath in imagepaths:
-            files.append(images_dir + "/" + folder + "/" + imagepath)
+            files.append(i_dir + "/" + folder + "/" + imagepath)
             target.append(folder)
     df_images = pd.DataFrame({"imagepath": files, "wnid": target})
     df_images = df_images.sample(frac=1, random_state=seed_rn).reset_index(drop=True)  # shuffle input data
     logger.info("Preparing Train Set")
     images_train = datagen.flow_from_dataframe(df_images, x_col='imagepath', y_col='wnid', batch_size=1,
-                                               target_size=(img_rows, img_cols), shuffle=False, seed=seed_rn,
+                                               target_size=(i_rows, i_cols), shuffle=False, seed=seed_rn,
                                                subset="training")
     logger.info("Preparing Test Set")
     images_test = datagen.flow_from_dataframe(df_images, x_col='imagepath', y_col='wnid', batch_size=1,
-                                              target_size=(img_rows, img_cols), shuffle=False, seed=seed_rn,
+                                              target_size=(i_rows, i_cols), shuffle=False, seed=seed_rn,
                                               subset="validation")
     logger.info("images ready")
     return images_train, images_test
 
 
 def get_activations(prep_images, method, cnn, layers, classnum, maxclass):
-    '''
+    """
     computes the average or max activations of prep_images for specific layers of a certain network
 
     input:
@@ -169,7 +171,7 @@ def get_activations(prep_images, method, cnn, layers, classnum, maxclass):
 
     returns:
     - prep_act: prepared activations
-    '''
+    """
     logger.debug("get_activations")
     prep_act = 0
     if method not in ["max", "average"]:
@@ -181,6 +183,9 @@ def get_activations(prep_images, method, cnn, layers, classnum, maxclass):
     outputs_model = keras.Model([cnn.input], outputs)
     num_pics = len(prep_images)
     logger.debug("number images of this class" + str(num_pics))
+    raw_acts=outputs_model.predict(prep_images)
+    raw_acts.apply()
+
     for step in range(num_pics):
         logger.info("collect, scale and combine activations for image " + str(step + 1) + " of " + str(
             num_pics) + " (class " + str(classnum + 1) + " of " + str(maxclass) + ")")
@@ -244,7 +249,7 @@ def act_fil(acts):
 logger.info("Selected network is " + network)
 
 # preprocess images
-train, test = preprocess_images_from_dir(images_dir, img_rows, img_cols, network, seed_rn, split, res_classes)
+train, test = preprocess_images_from_dir(images_dir, preprocess_input, img_rows, img_cols,  seed_rn, split, res_classes)
 
 # extract class labels
 labels_id_inv = train.class_indices  # get dict with mapping of labels
