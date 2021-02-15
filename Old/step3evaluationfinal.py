@@ -408,7 +408,7 @@ for image_class in tqdm(range(num_classes)):
 
     #comppute activations of filters
     logger.debug("collect activations and labels")
-    out=get_activations_single(image,cnn,layers)
+    out=get_activations(image,cnn,layers)
     fil_act=act_fil(out)
 
     #get labels of active filters
