@@ -162,8 +162,7 @@ def preprocess_images_from_dir(images_dir,img_rows,img_cols,cnn,seed_rn,split,nu
     for imagepath in imagepaths:
       files.append(images_dir+"/"+folder+"/"+imagepath)
       target.append(folder)
-  df_images = pd.DataFrame({"
-  imagepath": files, "wnid": target})
+  df_images = pd.DataFrame({"imagepath": files, "wnid": target})
   df_images = df_images.sample(frac=1,random_state=seed_rn).reset_index(drop=True)#shuffle input data
   logger.info("Preparing Train Set")
   images_train=datagen.flow_from_dataframe(df_images, x_col = 'imagepath', y_col = 'wnid',batch_size=1, target_size=(img_rows,img_cols),shuffle=False,seed=seed_rn,subset="training")
